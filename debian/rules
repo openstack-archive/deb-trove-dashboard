@@ -1,0 +1,38 @@
+#!/usr/bin/make -f
+
+PYTHONS:=$(shell pyversions -vr)
+
+UPSTREAM_GIT = git://github.com/openstack/trove-dashboard.git
+include /usr/share/openstack-pkg-tools/pkgos.make
+export OSLO_PACKAGE_VERSION=$(shell dpkg-parsechangelog | grep Version: | cut -d' ' -f2 | sed -e 's/^[[:digit:]]*://' -e 's/[-].*//' -e 's/~/.0/' | head -n 1)
+
+%:
+	dh $@ --buildsystem=python_distutils --with python2
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	NOSE_WITH_OPENSTACK=1 \
+		NOSE_OPENSTACK_COLOR=1 \
+		NOSE_OPENSTACK_RED=0.05 \
+		NOSE_OPENSTACK_YELLOW=0.025 \
+		NOSE_OPENSTACK_SHOW_ELAPSED=1 \
+		DJANGO_SETTINGS_MODULE=trove_dashboard.test.settings \
+		python-coverage run \
+		$(CURDIR)/manage.py test trove_dashboard --settings=trove_dashboard.test.settings
+endif
+
+override_dh_clean:
+	dh_clean -O--buildsystem=python_distutils
+	rm -rf .coverage*
+
+override_dh_auto_install:
+	dh_auto_install -O--buildsystem=python_distutils
+
+	# Activates the trove_dashboard plugin in Horizon
+	# trove_dashboard/enabled/_17*
+	set -e ; for pyvers in $(PYTHONS); do \
+		mkdir -p $(CURDIR)/debian/python-trove-dashboard/usr/lib/python$$pyvers/dist-packages/openstack_dashboard/enabled ; \
+		cp $(CURDIR)/trove_dashboard/enabled/_17* $(CURDIR)/debian/python-trove-dashboard/usr/lib/python$$pyvers/dist-packages/openstack_dashboard/enabled ; \
+	done
+	mkdir -p $(CURDIR)/debian/python-trove-dashboard/usr/share/openstack-dashboard/openstack_dashboard/enabled
+	cp $(CURDIR)/trove_dashboard/enabled/_17*.py $(CURDIR)/debian/python-trove-dashboard/usr/share/openstack-dashboard/openstack_dashboard/enabled

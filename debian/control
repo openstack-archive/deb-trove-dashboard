@@ -1,0 +1,68 @@
+Source: trove-dashboard
+Section: python
+Priority: extra
+Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
+Uploaders: Thomas Goirand <zigo@debian.org>,
+Build-Depends: debhelper (>= 9),
+               dh-python,
+               openstack-pkg-tools,
+               python-all,
+               python-pbr (>= 1.8),
+               python-setuptools,
+               python-sphinx,
+Build-Depends-Indep: openstack-dashboard (>= 9.0.0~b2),
+                     python-babel,
+                     python-coverage,
+                     python-ddt (>= 0.7.0),
+                     python-django (>= 1.8),
+                     python-django-compressor (>= 1.4),
+                     python-django-nose (>= 1.2),
+                     python-django-openstack-auth (>= 2.0.0),
+                     python-hacking,
+                     python-iso8601,
+                     python-keystoneclient (>= 1.6.0),
+                     python-mock (>= 1.2),
+                     python-mox3 (>= 0.7.0),
+                     python-oslosphinx (>= 2.5.0),
+                     python-selenium,
+                     python-swiftclient (>= 2.2.0),
+                     python-testscenarios,
+                     python-testtools (>= 1.4.0),
+                     python-troveclient (>= 1.2.0),
+                     python-unittest2,
+                     python-xvfbwrapper,
+                     subunit,
+                     testrepository,
+Standards-Version: 3.9.6
+Vcs-Git: git://anonscm.debian.org/openstack/trove-dashboard.git
+Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/trove-dashboard.git;a=summary
+Homepage: https://github.com/stackforge/trove-dashboard
+
+Package: python-trove-dashboard
+Architecture: all
+Depends: openstack-dashboard (>= 9.0.0~b2),
+         python-babel,
+         python-django (>= 1.8),
+         python-django-compressor (>= 1.4),
+         python-django-openstack-auth (>= 2.0.0),
+         python-iso8601,
+         python-keystoneclient (>= 1.6.0),
+         python-pbr (>= 1.8),
+         python-swiftclient (>= 2.2.0),
+         python-troveclient (>= 1.2.0),
+         ${misc:Depends},
+         ${python:Depends},
+Description: Database as a Service for OpenStack - dashboard plugin
+ Trove is Database as a Service for Openstack. It's designed to run entirely on
+ OpenStack, with the goal of allowing users to quickly and easily utilize the
+ features of a relational database without the burden of handling complex
+ administrative tasks. Cloud users and database administrators can provision
+ and manage multiple database instances as needed. Initially, the service will
+ focus on providing resource isolation at high performance while automating
+ complex administrative tasks including deployment, configuration, patching,
+ backups, restores, and monitoring. Trove is designed to support a
+ single-tenant database within a Nova instance. There is no restrictions on how
+ Nova is configured, since Trove interacts with other OpenStack components
+ purely through the API.
+ .
+ This package provides the Trove dashboard plugin.
