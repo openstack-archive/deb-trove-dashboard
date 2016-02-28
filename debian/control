@@ -34,8 +34,8 @@ Build-Depends-Indep: openstack-dashboard (>= 9.0.0~b2),
                      subunit,
                      testrepository,
 Standards-Version: 3.9.6
-Vcs-Git: git://anonscm.debian.org/openstack/trove-dashboard.git
-Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/trove-dashboard.git;a=summary
+Vcs-Git: https://anonscm.debian.org/git/openstack/trove-dashboard.git
+Vcs-Browser: https://anonscm.debian.org/cgit/openstack/trove-dashboard.git/
 Homepage: https://github.com/stackforge/trove-dashboard
 
 Package: python-trove-dashboard

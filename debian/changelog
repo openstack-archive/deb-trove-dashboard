@@ -1,3 +1,9 @@
+trove-dashboard (6.0.0~b2-2) UNRELEASED; urgency=medium
+
+  * Fixed VCS URLs (https).
+
+ -- Ondřej Nový <novy@ondrej.org>  Sun, 28 Feb 2016 15:58:40 +0100
+
 trove-dashboard (6.0.0~b2-1) experimental; urgency=medium
 
   * Initial release. (Closes: #812963)
