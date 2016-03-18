@@ -14,6 +14,7 @@
 # under the License.
 
 import logging
+import uuid
 
 from django.core.urlresolvers import reverse
 from django.utils.translation import ugettext_lazy as _
@@ -26,6 +27,8 @@ from horizon.utils import memoized
 from openstack_dashboard import api
 
 from trove_dashboard import api as trove_api
+from trove_dashboard.content.database_clusters \
+    import cluster_manager
 from trove_dashboard.content.databases import db_capability
 
 LOG = logging.getLogger(__name__)
@@ -41,7 +44,7 @@ class LaunchForm(forms.SelfHandlingForm):
             'class': 'switchable',
             'data-slug': 'datastore'
         }))
-    mongodb_flavor = forms.ChoiceField(
+    flavor = forms.ChoiceField(
         label=_("Flavor"),
         help_text=_("Size of instance to launch."),
         required=False,
@@ -96,22 +99,23 @@ class LaunchForm(forms.SelfHandlingForm):
             'class': 'switched',
             'data-switch-on': 'datastore',
         }))
-    num_instances_per_shards = forms.IntegerField(
-        label=_("Instances Per Shard"),
+    num_instances = forms.IntegerField(
+        label=_("Number of Instances"),
         initial=3,
         required=False,
-        help_text=_("Number of instances per shard. (Read only)"),
+        help_text=_("Number of instances in the cluster."),
         widget=forms.TextInput(attrs={
-            'readonly': 'readonly',
             'class': 'switched',
             'data-switch-on': 'datastore',
         }))
 
     # (name of field variable, label)
-    mongodb_fields = [
-        ('mongodb_flavor', _('Flavor')),
+    default_fields = [
+        ('flavor', _('Flavor')),
+        ('num_instances', _('Number of Instances'))
+    ]
+    mongodb_fields = default_fields + [
         ('num_shards', _('Number of Shards')),
-        ('num_instances_per_shards', _('Instances Per Shard'))
     ]
     vertica_fields = [
         ('num_instances_vertica', ('Number of Instances')),
@@ -134,18 +138,25 @@ class LaunchForm(forms.SelfHandlingForm):
         if datastore_field_value:
             datastore = datastore_field_value.split(',')[0]
 
-            if db_capability.is_mongodb_datastore(datastore):
-                if self.data.get("num_shards", 0) < 1:
-                    msg = _("The number of shards must be greater than 1.")
-                    self._errors["num_shards"] = self.error_class([msg])
-
-            elif db_capability.is_vertica_datastore(datastore):
+            if db_capability.is_vertica_datastore(datastore):
                 if not self.data.get("vertica_flavor", None):
                     msg = _("The flavor must be specified.")
                     self._errors["vertica_flavor"] = self.error_class([msg])
                 if not self.data.get("root_password", None):
                     msg = _("Password for root user must be specified.")
                     self._errors["root_password"] = self.error_class([msg])
+            else:
+                if not self.data.get("flavor", None):
+                    msg = _("The flavor must be specified.")
+                    self._errors["flavor"] = self.error_class([msg])
+                if int(self.data.get("num_instances", 0)) < 1:
+                    msg = _("The number of instances must be greater than 1.")
+                    self._errors["num_instances"] = self.error_class([msg])
+
+                if db_capability.is_mongodb_datastore(datastore):
+                    if int(self.data.get("num_shards", 0)) < 1:
+                        msg = _("The number of shards must be greater than 1.")
+                        self._errors["num_shards"] = self.error_class([msg])
 
         return self.cleaned_data
 
@@ -166,27 +177,19 @@ class LaunchForm(forms.SelfHandlingForm):
         valid_flavor = []
         for ds in self.datastores(request):
             # TODO(michayu): until capabilities lands
-            if db_capability.is_mongodb_datastore(ds.name):
-                versions = self.datastore_versions(request, ds.name)
-                for version in versions:
-                    if version.name == "inactive":
-                        continue
-                    valid_flavor = self.datastore_flavors(request, ds.name,
-                                                          versions[0].name)
-                    if valid_flavor:
-                        self.fields['mongodb_flavor'].choices = sorted(
-                            [(f.id, "%s" % f.name) for f in valid_flavor])
-
+            field_name = 'flavor'
             if db_capability.is_vertica_datastore(ds.name):
-                versions = self.datastore_versions(request, ds.name)
-                for version in versions:
-                    if version.name == "inactive":
-                        continue
-                    valid_flavor = self.datastore_flavors(request, ds.name,
-                                                          versions[0].name)
-                    if valid_flavor:
-                        self.fields['vertica_flavor'].choices = sorted(
-                            [(f.id, "%s" % f.name) for f in valid_flavor])
+                field_name = 'vertica_flavor'
+
+            versions = self.datastore_versions(request, ds.name)
+            for version in versions:
+                if version.name == "inactive":
+                    continue
+                valid_flavor = self.datastore_flavors(request, ds.name,
+                                                      versions[0].name)
+                if valid_flavor:
+                    self.fields[field_name].choices = sorted(
+                        [(f.id, "%s" % f.name) for f in valid_flavor])
 
     @memoized.memoized_method
     def populate_network_choices(self, request):
@@ -224,8 +227,7 @@ class LaunchForm(forms.SelfHandlingForm):
         datastores = []
         for ds in self.datastores(request):
             # TODO(michayu): until capabilities lands
-            if (db_capability.is_vertica_datastore(ds.name)
-                    or db_capability.is_mongodb_datastore(ds.name)):
+            if db_capability.is_cluster_capable_datastore(ds.name):
                 datastores.append(ds)
         return datastores
 
@@ -269,6 +271,8 @@ class LaunchForm(forms.SelfHandlingForm):
             fields = self.mongodb_fields
         elif db_capability.is_vertica_datastore(datastore):
             fields = self.vertica_fields
+        else:
+            fields = self.default_fields
 
         for field in fields:
             attr_key = 'data-datastore-' + selection_text
@@ -279,11 +283,10 @@ class LaunchForm(forms.SelfHandlingForm):
     @sensitive_variables('data')
     def handle(self, request, data):
         try:
-            datastore = data['datastore'].split('-')[0]
-            datastore_version = data['datastore'].split('-')[1]
+            datastore, datastore_version = data['datastore'].split('-', 1)
 
-            final_flavor = data['mongodb_flavor']
-            num_instances = data['num_instances_per_shards']
+            final_flavor = data['flavor']
+            num_instances = data['num_instances']
             root_password = None
             if db_capability.is_vertica_datastore(datastore):
                 final_flavor = data['vertica_flavor']
@@ -314,39 +317,78 @@ class LaunchForm(forms.SelfHandlingForm):
                               redirect=redirect)
 
 
-class AddShardForm(forms.SelfHandlingForm):
-    name = forms.CharField(
-        label=_("Cluster Name"),
-        max_length=80,
-        widget=forms.TextInput(attrs={'readonly': 'readonly'}))
-    num_shards = forms.IntegerField(
-        label=_("Number of Shards"),
+class ClusterAddInstanceForm(forms.SelfHandlingForm):
+    cluster_id = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput())
+    flavor = forms.ChoiceField(
+        label=_("Flavor"),
+        help_text=_("Size of image to launch."))
+    volume = forms.IntegerField(
+        label=_("Volume Size"),
+        min_value=0,
         initial=1,
-        widget=forms.TextInput(attrs={'readonly': 'readonly'}))
-    num_instances = forms.IntegerField(label=_("Instances Per Shard"),
-                                       initial=3,
-                                       widget=forms.TextInput(
-                                           attrs={'readonly': 'readonly'}))
-    cluster_id = forms.CharField(required=False,
-                                 widget=forms.HiddenInput())
+        help_text=_("Size of the volume in GB."))
+    name = forms.CharField(
+        label=_("Name"),
+        required=False,
+        help_text=_("Optional name of the instance."))
+    type = forms.CharField(
+        label=_("Instance Type"),
+        required=False,
+        help_text=_("Optional datastore specific type of the instance."))
+    related_to = forms.CharField(
+        label=_("Related To"),
+        required=False,
+        help_text=_("Optional datastore specific value that defines the "
+                    "relationship from one instance in the cluster to "
+                    "another."))
+
+    def __init__(self, request, *args, **kwargs):
+        super(ClusterAddInstanceForm, self).__init__(request, *args, **kwargs)
+
+        self.fields['flavor'].choices = self.populate_flavor_choices(request)
+
+    @memoized.memoized_method
+    def flavors(self, request):
+        try:
+            datastore = None
+            datastore_version = None
+            datastore_dict = self.initial.get('datastore', None)
+            if datastore_dict:
+                datastore = datastore_dict.get('type', None)
+                datastore_version = datastore_dict.get('version', None)
+            return trove_api.trove.datastore_flavors(
+                request,
+                datastore_name=datastore,
+                datastore_version=datastore_version)
+        except Exception:
+            LOG.exception("Exception while obtaining flavors list")
+            self._flavors = []
+            redirect = reverse('horizon:project:database_clusters:index')
+            exceptions.handle(request,
+                              _('Unable to obtain flavors.'),
+                              redirect=redirect)
+
+    def populate_flavor_choices(self, request):
+        flavor_list = [(f.id, "%s" % f.name) for f in self.flavors(request)]
+        return sorted(flavor_list)
 
     def handle(self, request, data):
         try:
-            LOG.info("Adding shard with parameters "
-                     "{name=%s, num_shards=%s, num_instances=%s, "
-                     "cluster_id=%s}",
-                     data['name'],
-                     data['num_shards'],
-                     data['num_instances'],
-                     data['cluster_id'])
-            trove_api.trove.cluster_add_shard(request, data['cluster_id'])
-
-            messages.success(request,
-                             _('Added shard to "%s"') % data['name'])
+            flavor = trove_api.trove.flavor_get(request, data['flavor'])
+            manager = cluster_manager.get(data['cluster_id'])
+            manager.add_instance(str(uuid.uuid4()),
+                                 data.get('name', None),
+                                 data['flavor'],
+                                 flavor.name,
+                                 data['volume'],
+                                 data.get('type', None),
+                                 data.get('related_to', None))
         except Exception as e:
             redirect = reverse("horizon:project:database_clusters:index")
             exceptions.handle(request,
-                              _('Unable to add shard. %s') % e.message,
+                              _('Unable to grow cluster. %s') % e.message,
                               redirect=redirect)
         return True
 

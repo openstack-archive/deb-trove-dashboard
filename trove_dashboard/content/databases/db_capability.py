@@ -14,12 +14,37 @@
 
 
 MONGODB = "mongodb"
+PERCONA_CLUSTER = "pxc"
+REDIS = "redis"
 VERTICA = "vertica"
+
+_cluster_capable_datastores = (MONGODB, PERCONA_CLUSTER, REDIS, VERTICA)
+
+
+def can_modify_cluster(datastore):
+    return (is_mongodb_datastore(datastore) or is_redis_datastore(datastore))
 
 
 def is_mongodb_datastore(datastore):
     return (datastore is not None) and (MONGODB in datastore.lower())
 
 
+def is_percona_cluster_datastore(datastore):
+    return (datastore is not None) and (PERCONA_CLUSTER in datastore.lower())
+
+
+def is_redis_datastore(datastore):
+    return (datastore is not None) and (REDIS in datastore.lower())
+
+
 def is_vertica_datastore(datastore):
     return (datastore is not None) and (VERTICA in datastore.lower())
+
+
+def is_cluster_capable_datastore(datastore):
+    if datastore is not None:
+        datastore_lower = datastore.lower()
+        for ds in _cluster_capable_datastores:
+            if ds in datastore_lower:
+                return True
+    return False
