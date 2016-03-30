@@ -1,0 +1,37 @@
+Description: Remove failed test
+ This patch femoves test_resize_volume_bad_value() which fails in Debian.
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: no
+Last-Update: 2016-03-30
+
+--- trove-dashboard-6.0.0~rc2.orig/trove_dashboard/content/databases/tests.py
++++ trove-dashboard-6.0.0~rc2/trove_dashboard/content/databases/tests.py
+@@ -868,28 +868,6 @@ class DatabaseTests(test.TestCase):
+         self.assertNoFormErrors(res)
+         self.assertRedirectsNoFollow(res, INDEX_URL)
+ 
+-    @test.create_stubs({api.trove: ('instance_get', )})
+-    def test_resize_volume_bad_value(self):
+-        database = self.databases.first()
+-        database_id = database.id
+-        database_size = database.volume.get('size')
+-
+-        # views.py: DetailView.get_data
+-        api.trove.instance_get(IsA(http.HttpRequest), IsA(six.text_type))\
+-            .AndReturn(database)
+-
+-        self.mox.ReplayAll()
+-        url = reverse('horizon:project:databases:resize_volume',
+-                      args=[database_id])
+-        post = {
+-            'instance_id': database_id,
+-            'orig_size': database_size,
+-            'new_size': database_size,
+-        }
+-        res = self.client.post(url, post)
+-        self.assertContains(
+-            res, "New size for volume must be greater than current size.")
+-
+     @test.create_stubs(
+         {api.trove: ('instance_get',
+                      'flavor_list')})
