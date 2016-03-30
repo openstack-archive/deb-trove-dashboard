@@ -1,4 +1,4 @@
-trove-dashboard (6.0.0~rc1+2016.03.25.git.be04f4c4b2-1) experimental; urgency=medium
+trove-dashboard (6.0.0~rc2-1) experimental; urgency=medium
 
   * Initial release. (Closes: #812963)
 
