@@ -1,3 +1,9 @@
+trove-dashboard (6.0.0-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 07 Apr 2016 22:32:56 +0200
+
 trove-dashboard (6.0.0~rc2-1) unstable; urgency=medium
 
   * Initial release. (Closes: #812963)
