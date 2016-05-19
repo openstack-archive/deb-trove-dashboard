@@ -1,6 +1,7 @@
 trove-dashboard (6.0.0-2) UNRELEASED; urgency=medium
 
   * Standards-Version is 3.9.8 now (no change)
+  * d/rules: Removed UPSTREAM_GIT with default value
 
  -- Ondřej Nový <novy@ondrej.org>  Sat, 09 Apr 2016 19:33:13 +0200
 
