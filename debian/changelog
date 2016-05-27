@@ -1,9 +1,13 @@
 trove-dashboard (6.0.0-2) UNRELEASED; urgency=medium
 
+  [ Ondřej Nový ]
   * Standards-Version is 3.9.8 now (no change)
   * d/rules: Removed UPSTREAM_GIT with default value
 
- -- Ondřej Nový <novy@ondrej.org>  Sat, 09 Apr 2016 19:33:13 +0200
+  [ Thomas Goirand ]
+  * Added missing EPOC in (build-)depends: openstack-dashboard.
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 27 May 2016 12:00:16 +0200
 
 trove-dashboard (6.0.0-1) unstable; urgency=medium
 
