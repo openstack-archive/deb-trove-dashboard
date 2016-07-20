@@ -6,7 +6,7 @@ trove-dashboard (6.0.0-3) UNRELEASED; urgency=medium
 
   [ Thomas Goirand ]
   * Added missing EPOC in (build-)depends: openstack-dashboard.
-  * Missing EPOC for keystoneclient as well.
+  * Missing EPOC for keystoneclient and swiftclient as well.
 
  -- Thomas Goirand <zigo@debian.org>  Wed, 20 Jul 2016 10:01:25 +0000
 
