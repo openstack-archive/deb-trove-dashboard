@@ -1,0 +1,9 @@
+Code-Review+1: Andreas Jaeger <jaegerandi@gmail.com>
+Code-Review+2: Thierry Carrez <thierry@openstack.org>
+Workflow+1: Thierry Carrez <thierry@openstack.org>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Mon, 21 Mar 2016 09:42:49 +0000
+Reviewed-on: https://review.openstack.org/294879
+Project: openstack/deb-trove-dashboard
+Branch: refs/heads/stable/mitaka
