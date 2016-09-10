@@ -1,0 +1,8 @@
+Code-Review+2: amrith <amrith@tesora.com>
+Workflow+1: amrith <amrith@tesora.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 12 Aug 2016 12:15:18 +0000
+Reviewed-on: https://review.openstack.org/353343
+Project: openstack/deb-trove-dashboard
+Branch: refs/heads/stable/mitaka
