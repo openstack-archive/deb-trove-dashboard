@@ -1,5 +1,6 @@
 [gerrit]
 host=review.openstack.org
 port=29418
-project=openstack/trove-dashboard.git
+project=openstack/deb-trove-dashboard.git
 defaultbranch=stable/mitaka
+defaultbranch=debian/newton

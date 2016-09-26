@@ -8,6 +8,10 @@ trove-dashboard (6.0.0-3) UNRELEASED; urgency=medium
   * Added missing EPOC in (build-)depends: openstack-dashboard.
   * Missing EPOC for keystoneclient and swiftclient as well.
 
+  [ Ondřej Nový ]
+  * d/s/options: extend-diff-ignore of .gitreview
+  * d/control: Using OpenStack's Gerrit as VCS URLs.
+
  -- Thomas Goirand <zigo@debian.org>  Wed, 20 Jul 2016 10:01:25 +0000
 
 trove-dashboard (6.0.0-1) unstable; urgency=medium
