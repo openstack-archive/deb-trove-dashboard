@@ -1,0 +1,8 @@
+Code-Review+2: amrith <amrith@tesora.com>
+Workflow+1: amrith <amrith@tesora.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 23 Sep 2016 12:32:16 +0000
+Reviewed-on: https://review.openstack.org/375263
+Project: openstack/deb-trove-dashboard
+Branch: refs/heads/stable/newton
