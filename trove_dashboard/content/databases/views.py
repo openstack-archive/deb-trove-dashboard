@@ -205,6 +205,41 @@ class AccessDetailView(horizon_tables.DataTableView):
         return context
 
 
+class AttachConfigurationView(horizon_forms.ModalFormView):
+    form_class = forms.AttachConfigurationForm
+    form_id = "attach_config_form"
+    modal_header = _("Attach Configuration Group")
+    modal_id = "attach_config_modal"
+    template_name = "project/databases/attach_config.html"
+    submit_label = "Attach Configuration"
+    submit_url = 'horizon:project:databases:attach_config'
+    success_url = reverse_lazy('horizon:project:databases:index')
+
+    @memoized.memoized_method
+    def get_object(self, *args, **kwargs):
+        instance_id = self.kwargs['instance_id']
+        try:
+            return api.trove.instance_get(self.request, instance_id)
+        except Exception:
+            msg = _('Unable to retrieve instance details.')
+            redirect = reverse('horizon:project:databases:index')
+            exceptions.handle(self.request, msg, redirect=redirect)
+
+    def get_context_data(self, **kwargs):
+        context = (super(AttachConfigurationView, self)
+                   .get_context_data(**kwargs))
+        context['instance_id'] = self.kwargs['instance_id']
+        args = (self.kwargs['instance_id'],)
+        context['submit_url'] = reverse(self.submit_url, args=args)
+        return context
+
+    def get_initial(self):
+        instance = self.get_object()
+        return {'instance_id': self.kwargs['instance_id'],
+                'datastore': instance.datastore.get('type', ''),
+                'datastore_version': instance.datastore.get('version', '')}
+
+
 class DetailView(horizon_tabs.TabbedTableView):
     tab_group_class = tabs.InstanceDetailTabs
     template_name = 'horizon/common/_detail.html'
@@ -276,7 +311,12 @@ class CreateDatabaseView(horizon_forms.ModalFormView):
 
 class ResizeVolumeView(horizon_forms.ModalFormView):
     form_class = forms.ResizeVolumeForm
+    form_id = "resize_volume_form"
+    modal_header = _("Resize Database Volume")
+    modal_id = "resize_volume_modal"
     template_name = 'project/databases/resize_volume.html'
+    submit_label = "Resize Database Volume"
+    submit_url = 'horizon:project:databases:resize_volume'
     success_url = reverse_lazy('horizon:project:databases:index')
     page_title = _("Resize Database Volume")
 
@@ -293,6 +333,8 @@ class ResizeVolumeView(horizon_forms.ModalFormView):
     def get_context_data(self, **kwargs):
         context = super(ResizeVolumeView, self).get_context_data(**kwargs)
         context['instance_id'] = self.kwargs['instance_id']
+        args = (self.kwargs['instance_id'],)
+        context['submit_url'] = reverse(self.submit_url, args=args)
         return context
 
     def get_initial(self):
@@ -303,7 +345,12 @@ class ResizeVolumeView(horizon_forms.ModalFormView):
 
 class ResizeInstanceView(horizon_forms.ModalFormView):
     form_class = forms.ResizeInstanceForm
+    form_id = "resize_instance_form"
+    modal_header = _("Resize Database Instance")
+    modal_id = "resize_instance_modal"
     template_name = 'project/databases/resize_instance.html'
+    submit_label = "Resize Database Instance"
+    submit_url = 'horizon:project:databases:resize_instance'
     success_url = reverse_lazy('horizon:project:databases:index')
     page_title = _("Resize Database Instance")
 
@@ -332,6 +379,8 @@ class ResizeInstanceView(horizon_forms.ModalFormView):
     def get_context_data(self, **kwargs):
         context = super(ResizeInstanceView, self).get_context_data(**kwargs)
         context['instance_id'] = self.kwargs['instance_id']
+        args = (self.kwargs['instance_id'],)
+        context['submit_url'] = reverse(self.submit_url, args=args)
         return context
 
     @memoized.memoized_method
@@ -355,6 +404,52 @@ class ResizeInstanceView(horizon_forms.ModalFormView):
                                                        'flavor_name', ''),
                             'flavors': self.get_flavors()})
         return initial
+
+
+class PromoteToReplicaSourceView(horizon_forms.ModalFormView):
+    form_class = forms.PromoteToReplicaSourceForm
+    form_id = "promote_to_replica_source_form"
+    modal_header = _("Promote to Replica Source")
+    modal_id = "promote_to_replica_source_modal"
+    template_name = 'project/databases/promote_to_replica_source.html'
+    submit_lable = _("Promote")
+    submit_url = 'horizon:project:databases:promote_to_replica_source'
+    success_url = reverse_lazy('horizon:project:databases:index')
+
+    @memoized.memoized_method
+    def get_object(self, *args, **kwargs):
+        instance_id = self.kwargs['instance_id']
+        try:
+            replica = api.trove.instance_get(self.request, instance_id)
+            replica_source = api.trove.instance_get(self.request,
+                                                    replica.replica_of['id'])
+            instances = {'replica': replica,
+                         'replica_source': replica_source}
+            return instances
+        except Exception:
+            msg = _('Unable to retrieve instance details.')
+            redirect = reverse('horizon:project:databases:index')
+            exceptions.handle(self.request, msg, redirect=redirect)
+
+    def get_context_data(self, **kwargs):
+        context = \
+            super(PromoteToReplicaSourceView, self).get_context_data(**kwargs)
+        context['instance_id'] = self.kwargs['instance_id']
+        context['replica'] = self.get_initial().get('replica')
+        context['replica'].ip = \
+            self.get_initial().get('replica').ip[0]
+        context['replica_source'] = self.get_initial().get('replica_source')
+        context['replica_source'].ip = \
+            self.get_initial().get('replica_source').ip[0]
+        args = (self.kwargs['instance_id'],)
+        context['submit_url'] = reverse(self.submit_url, args=args)
+        return context
+
+    def get_initial(self):
+        instances = self.get_object()
+        return {'instance_id': self.kwargs['instance_id'],
+                'replica': instances['replica'],
+                'replica_source': instances['replica_source']}
 
 
 class EnableRootInfo(object):

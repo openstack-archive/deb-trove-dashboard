@@ -14,6 +14,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
+
 from django.core.urlresolvers import reverse
 from django import http
 
@@ -76,7 +78,7 @@ class ClustersTests(test.TestCase):
                                           'flavor_list')})
     def test_index_pagination(self):
         clusters = self.trove_clusters.list()
-        last_record = clusters[0]
+        last_record = clusters[1]
         clusters = common.Paginated(clusters, next_marker="foo")
         trove_api.trove.cluster_list(IsA(http.HttpRequest), marker=None)\
             .AndReturn(clusters)
@@ -233,7 +235,8 @@ class ClustersTests(test.TestCase):
             datastore=cluster_datastore,
             datastore_version=cluster_datastore_version,
             nics=cluster_network,
-            root_password=None).AndReturn(self.trove_clusters.first())
+            root_password=None,
+            locality=None).AndReturn(self.trove_clusters.first())
 
         self.mox.ReplayAll()
         post = {
@@ -289,7 +292,8 @@ class ClustersTests(test.TestCase):
             datastore=cluster_datastore,
             datastore_version=cluster_datastore_version,
             nics=cluster_network,
-            root_password=None).AndReturn(self.trove_clusters.first())
+            root_password=None,
+            locality=None).AndReturn(self.trove_clusters.first())
 
         self.mox.ReplayAll()
         post = {
@@ -342,7 +346,8 @@ class ClustersTests(test.TestCase):
             datastore=cluster_datastore,
             datastore_version=cluster_datastore_version,
             nics=cluster_network,
-            root_password=None).AndReturn(self.trove_clusters.first())
+            root_password=None,
+            locality=None).AndReturn(self.trove_clusters.first())
 
         self.mox.ReplayAll()
         post = {
@@ -378,6 +383,45 @@ class ClustersTests(test.TestCase):
         self.assertTemplateUsed(res, 'horizon/common/_detail.html')
         self.assertContains(res, cluster.ip[0])
 
+    @test.create_stubs({trove_api.trove: ('cluster_get',
+                                          'instance_get',
+                                          'flavor_get',)})
+    def test_details_without_locality(self):
+        cluster = self.trove_clusters.list()[1]
+        trove_api.trove.cluster_get(IsA(http.HttpRequest), cluster.id) \
+            .MultipleTimes().AndReturn(cluster)
+        trove_api.trove.instance_get(IsA(http.HttpRequest), IsA(str)) \
+            .MultipleTimes().AndReturn(self.databases.first())
+        trove_api.trove.flavor_get(IsA(http.HttpRequest), IsA(str)) \
+            .MultipleTimes().AndReturn(self.flavors.first())
+        self.mox.ReplayAll()
+
+        details_url = reverse('horizon:project:database_clusters:detail',
+                              args=[cluster.id])
+        res = self.client.get(details_url)
+        self.assertTemplateUsed(res, 'horizon/common/_detail.html')
+        self.assertNotContains(res, "Locality")
+
+    @test.create_stubs({trove_api.trove: ('cluster_get',
+                                          'instance_get',
+                                          'flavor_get',)})
+    def test_details_with_locality(self):
+        cluster = self.trove_clusters.first()
+        trove_api.trove.cluster_get(IsA(http.HttpRequest), cluster.id) \
+            .MultipleTimes().AndReturn(cluster)
+        trove_api.trove.instance_get(IsA(http.HttpRequest), IsA(str)) \
+            .MultipleTimes().AndReturn(self.databases.first())
+        trove_api.trove.flavor_get(IsA(http.HttpRequest), IsA(str)) \
+            .MultipleTimes().AndReturn(self.flavors.first())
+        self.mox.ReplayAll()
+
+        details_url = reverse('horizon:project:database_clusters:detail',
+                              args=[cluster.id])
+        res = self.client.get(details_url)
+        self.assertTemplateUsed(res, 'project/database_clusters/'
+                                     '_detail_overview.html')
+        self.assertContains(res, "Locality")
+
     @test.create_stubs(
         {trove_api.trove: ('cluster_get',
                            'cluster_grow'),
@@ -393,13 +437,15 @@ class ClustersTests(test.TestCase):
         instances = [
             cluster_manager.ClusterInstance("id1", "name1", cluster_flavor,
                                             cluster_flavor_name,
-                                            cluster_volume, "master", None),
+                                            cluster_volume, "master", None,
+                                            None),
             cluster_manager.ClusterInstance("id2", "name2", cluster_flavor,
                                             cluster_flavor_name,
-                                            cluster_volume, "slave", "master"),
+                                            cluster_volume, "slave",
+                                            "master", None),
             cluster_manager.ClusterInstance("id3", None, cluster_flavor,
                                             cluster_flavor_name,
-                                            cluster_volume, None, None),
+                                            cluster_volume, None, None, None),
         ]
 
         manager = cluster_manager.ClusterInstanceManager(cluster.id)
@@ -466,13 +512,15 @@ class ClustersTests(test.TestCase):
         instances = [
             cluster_manager.ClusterInstance("id1", "name1", cluster_flavor,
                                             cluster_flavor_name,
-                                            cluster_volume, "master", None),
+                                            cluster_volume, "master", None,
+                                            None),
             cluster_manager.ClusterInstance("id2", "name2", cluster_flavor,
                                             cluster_flavor_name,
-                                            cluster_volume, "slave", "master"),
+                                            cluster_volume, "slave",
+                                            "master", None),
             cluster_manager.ClusterInstance("id3", None, cluster_flavor,
                                             cluster_flavor_name,
-                                            cluster_volume, None, None),
+                                            cluster_volume, None, None, None),
         ]
 
         manager = cluster_manager.ClusterInstanceManager(cluster.id)
@@ -489,12 +537,27 @@ class ClustersTests(test.TestCase):
         self.assertTemplateUsed(
             res, 'project/database_clusters/cluster_grow_details.html')
 
-        action = "".join([tables.ClusterGrowInstancesTable.Meta.name, '__',
-                          tables.ClusterGrowAction.name, '__',
-                          cluster.id])
-        res = self.client.post(url, {'action': action})
-        self.assertMessageCount(error=1)
-        self.assertRedirectsNoFollow(res, INDEX_URL)
+        toSuppress = ["trove_dashboard.content.database_clusters.tables"]
+
+        # Suppress expected log messages in the test output
+        loggers = []
+        for cls in toSuppress:
+            logger = logging.getLogger(cls)
+            loggers.append((logger, logger.getEffectiveLevel()))
+            logger.setLevel(logging.CRITICAL)
+
+        try:
+            action = "".join([tables.ClusterGrowInstancesTable.Meta.name, '__',
+                              tables.ClusterGrowAction.name, '__',
+                              cluster.id])
+            res = self.client.post(url, {'action': action})
+
+            self.assertMessageCount(error=1)
+            self.assertRedirectsNoFollow(res, INDEX_URL)
+        finally:
+            # Restore the previous log levels
+            for (log, level) in loggers:
+                log.setLevel(level)
 
     @test.create_stubs({trove_api.trove: ('cluster_get',
                                           'cluster_shrink')})
@@ -547,9 +610,24 @@ class ClustersTests(test.TestCase):
         action = "".join([tables.ClusterShrinkInstancesTable.Meta.name, '__',
                           tables.ClusterShrinkAction.name, '__',
                           cluster_id])
-        res = self.client.post(url, {'action': action})
-        self.assertMessageCount(error=1)
-        self.assertRedirectsNoFollow(res, INDEX_URL)
+
+        toSuppress = ["trove_dashboard.content.database_clusters.tables"]
+
+        # Suppress expected log messages in the test output
+        loggers = []
+        for cls in toSuppress:
+            logger = logging.getLogger(cls)
+            loggers.append((logger, logger.getEffectiveLevel()))
+            logger.setLevel(logging.CRITICAL)
+
+        try:
+            res = self.client.post(url, {'action': action})
+            self.assertMessageCount(error=1)
+            self.assertRedirectsNoFollow(res, INDEX_URL)
+        finally:
+            # Restore the previous log levels
+            for (log, level) in loggers:
+                log.setLevel(level)
 
     def _get_filtered_datastores(self, datastore):
         filtered_datastore = []

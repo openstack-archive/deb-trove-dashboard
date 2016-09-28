@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import binascii
 import logging
 
 from django.conf import settings
@@ -25,16 +26,27 @@ from horizon import workflows
 from openstack_dashboard import api as dash_api
 from openstack_dashboard.dashboards.project.instances \
     import utils as instance_utils
+from openstack_dashboard.dashboards.project.instances.workflows \
+    import create_instance as dash_create_instance
+
 
 from trove_dashboard import api
 
 LOG = logging.getLogger(__name__)
 
 
+def parse_datastore_and_version_text(datastore_and_version):
+    if datastore_and_version:
+        datastore, datastore_version = datastore_and_version.split('-', 1)
+        return datastore.strip(), datastore_version.strip()
+    return None, None
+
+
 class SetInstanceDetailsAction(workflows.Action):
+    availability_zone = forms.ChoiceField(
+        label=_("Availability Zone"),
+        required=False)
     name = forms.CharField(max_length=80, label=_("Instance Name"))
-    flavor = forms.ChoiceField(label=_("Flavor"),
-                               help_text=_("Size of image to launch."))
     volume = forms.IntegerField(label=_("Volume Size"),
                                 min_value=0,
                                 initial=1,
@@ -43,36 +55,107 @@ class SetInstanceDetailsAction(workflows.Action):
         label=_("Volume Type"),
         required=False,
         help_text=_("Applicable only if the volume size is specified."))
-    datastore = forms.ChoiceField(label=_("Datastore"),
-                                  help_text=_(
-                                      "Type and version of datastore."))
+    datastore = forms.ChoiceField(
+        label=_("Datastore"),
+        help_text=_("Type and version of datastore."),
+        widget=forms.Select(attrs={
+            'class': 'switchable',
+            'data-slug': 'datastore'
+        }))
+
+    def __init__(self, request, *args, **kwargs):
+        super(SetInstanceDetailsAction, self).__init__(request,
+                                                       *args,
+                                                       **kwargs)
+        # Add this field to the end after the dynamic fields
+        self.fields['locality'] = forms.ChoiceField(
+            label=_("Locality"),
+            choices=[("", "None"),
+                     ("affinity", "affinity"),
+                     ("anti-affinity", "anti-affinity")],
+            required=False,
+            help_text=_("Specify whether future replicated instances will "
+                        "be created on the same hypervisor (affinity) or on "
+                        "different hypervisors (anti-affinity). "
+                        "This value is ignored if the instance to be "
+                        "launched is a replica.")
+        )
 
     class Meta(object):
         name = _("Details")
         help_text_template = "project/databases/_launch_details_help.html"
 
     def clean(self):
-        if self.data.get("datastore", None) == "select_datastore_type_version":
+        datastore_and_version = self.data.get("datastore", None)
+        if not datastore_and_version:
             msg = _("You must select a datastore type and version.")
             self._errors["datastore"] = self.error_class([msg])
+        else:
+            datastore, datastore_version = parse_datastore_and_version_text(
+                binascii.unhexlify(datastore_and_version))
+            field_name = self._build_flavor_field_name(datastore,
+                                                       datastore_version)
+            flavor = self.data.get(field_name, None)
+            if not flavor:
+                msg = _("You must select a flavor.")
+                self._errors[field_name] = self.error_class([msg])
+
+        if not self.data.get("locality", None):
+            self.cleaned_data["locality"] = None
+
         return self.cleaned_data
 
+    def handle(self, request, context):
+        datastore_and_version = context["datastore"]
+        if datastore_and_version:
+            datastore, datastore_version = parse_datastore_and_version_text(
+                binascii.unhexlify(context["datastore"]))
+            field_name = self._build_flavor_field_name(datastore,
+                                                       datastore_version)
+            flavor = self.data[field_name]
+            if flavor:
+                context["flavor"] = flavor
+                return context
+        return None
+
     @memoized.memoized_method
-    def flavors(self, request):
+    def availability_zones(self, request):
         try:
-            return api.trove.flavor_list(request)
+            return dash_api.nova.availability_zone_list(request)
+        except Exception:
+            LOG.exception("Exception while obtaining availablity zones")
+            self._availability_zones = []
+
+    def populate_availability_zone_choices(self, request, context):
+        try:
+            zones = self.availability_zones(request)
+        except Exception:
+            zones = []
+            redirect = reverse('horizon:project:databases:index')
+            exceptions.handle(request,
+                              _('Unable to retrieve availability zones.'),
+                              redirect=redirect)
+
+        zone_list = [(zone.zoneName, zone.zoneName)
+                     for zone in zones if zone.zoneState['available']]
+        zone_list.sort()
+        if not zone_list:
+            zone_list.insert(0, ("", _("No availability zones found")))
+        elif len(zone_list) > 1:
+            zone_list.insert(0, ("", _("Any Availability Zone")))
+        return zone_list
+
+    @memoized.memoized_method
+    def datastore_flavors(self, request, datastore_name, datastore_version):
+        try:
+            return api.trove.datastore_flavors(
+                request, datastore_name, datastore_version)
         except Exception:
             LOG.exception("Exception while obtaining flavors list")
             redirect = reverse("horizon:project:databases:index")
             exceptions.handle(request,
                               _('Unable to obtain flavors.'),
                               redirect=redirect)
-
-    def populate_flavor_choices(self, request, context):
-        flavors = self.flavors(request)
-        if flavors:
-            return instance_utils.sort_flavor_list(request, flavors)
-        return []
 
     @memoized.memoized_method
     def populate_volume_type_choices(self, request, context):
@@ -103,33 +186,65 @@ class SetInstanceDetailsAction(workflows.Action):
 
     def populate_datastore_choices(self, request, context):
         choices = ()
-        set_initial = False
         datastores = self.datastores(request)
         if datastores is not None:
-            num_datastores_with_one_version = 0
             for ds in datastores:
                 versions = self.datastore_versions(request, ds.name)
-                if not set_initial:
-                    if len(versions) >= 2:
-                        set_initial = True
-                    elif len(versions) == 1:
-                        num_datastores_with_one_version += 1
-                        if num_datastores_with_one_version > 1:
-                            set_initial = True
                 if versions:
                     # only add to choices if datastore has at least one version
                     version_choices = ()
                     for v in versions:
+                        if hasattr(v, 'active') and not v.active:
+                            continue
+                        selection_text = self._build_datastore_display_text(
+                            ds.name, v.name)
+                        widget_text = self._build_widget_field_name(
+                            ds.name, v.name)
                         version_choices = (version_choices +
-                                           ((ds.name + ',' + v.name, v.name),))
-                    datastore_choices = (ds.name, version_choices)
-                    choices = choices + (datastore_choices,)
-            if set_initial:
-                # prepend choice to force user to choose
-                initial = (('select_datastore_type_version',
-                            _('Select datastore type and version')))
-                choices = (initial,) + choices
+                                           ((widget_text, selection_text),))
+                        self._add_datastore_flavor_field(request,
+                                                         ds.name,
+                                                         v.name)
+                    choices = choices + version_choices
         return choices
+
+    def _add_datastore_flavor_field(self,
+                                    request,
+                                    datastore,
+                                    datastore_version):
+        name = self._build_widget_field_name(datastore, datastore_version)
+        attr_key = 'data-datastore-' + name
+        field_name = self._build_flavor_field_name(datastore,
+                                                   datastore_version)
+        self.fields[field_name] = forms.ChoiceField(
+            label=_("Flavor"),
+            help_text=_("Size of image to launch."),
+            required=False,
+            widget=forms.Select(attrs={
+                'class': 'switched',
+                'data-switch-on': 'datastore',
+                attr_key: _("Flavor")
+            }))
+        valid_flavors = self.datastore_flavors(request,
+                                               datastore,
+                                               datastore_version)
+        if valid_flavors:
+            self.fields[field_name].choices = instance_utils.sort_flavor_list(
+                request, valid_flavors)
+
+    def _build_datastore_display_text(self, datastore, datastore_version):
+        return datastore + ' - ' + datastore_version
+
+    def _build_widget_field_name(self, datastore, datastore_version):
+        # Since the fieldnames cannot contain an uppercase character
+        # we generate a hex encoded string representation of the
+        # datastore and version as the fieldname
+        return binascii.hexlify(
+            self._build_datastore_display_text(datastore, datastore_version))
+
+    def _build_flavor_field_name(self, datastore, datastore_version):
+        return self._build_widget_field_name(datastore,
+                                             datastore_version)
 
 
 TROVE_ADD_USER_PERMS = getattr(settings, 'TROVE_ADD_USER_PERMS', [])
@@ -139,59 +254,8 @@ TROVE_ADD_PERMS = TROVE_ADD_USER_PERMS + TROVE_ADD_DATABASE_PERMS
 
 class SetInstanceDetails(workflows.Step):
     action_class = SetInstanceDetailsAction
-    contributes = ("name", "volume", "volume_type", "flavor", "datastore")
-
-
-class SetNetworkAction(workflows.Action):
-    network = forms.MultipleChoiceField(label=_("Networks"),
-                                        widget=forms.CheckboxSelectMultiple(),
-                                        error_messages={
-                                            'required': _(
-                                                "At least one network must"
-                                                " be specified.")},
-                                        help_text=_("Launch instance with"
-                                                    " these networks"))
-
-    def __init__(self, request, *args, **kwargs):
-        super(SetNetworkAction, self).__init__(request, *args, **kwargs)
-        network_list = self.fields["network"].choices
-        if len(network_list) == 1:
-            self.fields['network'].initial = [network_list[0][0]]
-
-    class Meta(object):
-        name = _("Networking")
-        permissions = ('openstack.services.network',)
-        help_text = _("Select networks for your instance.")
-
-    def populate_network_choices(self, request, context):
-        try:
-            tenant_id = self.request.user.tenant_id
-            networks = dash_api.neutron.network_list_for_tenant(request,
-                                                                tenant_id)
-            network_list = [(network.id, network.name_or_id)
-                            for network in networks]
-        except Exception:
-            network_list = []
-            exceptions.handle(request,
-                              _('Unable to retrieve networks.'))
-        return network_list
-
-
-class SetNetwork(workflows.Step):
-    action_class = SetNetworkAction
-    template_name = "project/databases/_launch_networks.html"
-    contributes = ("network_id",)
-
-    def contribute(self, data, context):
-        if data:
-            networks = self.workflow.request.POST.getlist("network")
-            # If no networks are explicitly specified, network list
-            # contains an empty string, so remove it.
-            networks = [n for n in networks if n != '']
-            if networks:
-                context['network_id'] = networks
-
-        return context
+    contributes = ("name", "volume", "volume_type", "flavor", "datastore",
+                   "locality", "availability_zone")
 
 
 class AddDatabasesAction(workflows.Action):
@@ -240,6 +304,10 @@ class InitializeDatabase(workflows.Step):
 
 
 class AdvancedAction(workflows.Action):
+    config = forms.ChoiceField(
+        label=_("Configuration Group"),
+        required=False,
+        help_text=_('Select a configuration group'))
     initial_state = forms.ChoiceField(
         label=_('Source for Initial State'),
         required=False,
@@ -270,10 +338,39 @@ class AdvancedAction(workflows.Action):
             'data-switch-on': 'initial_state',
             'data-initial_state-master': _('Master Instance Name')
         }))
+    replica_count = forms.IntegerField(
+        label=_('Replica Count'),
+        required=False,
+        min_value=1,
+        initial=1,
+        help_text=_('Specify the number of replicas to be created'),
+        widget=forms.TextInput(attrs={
+            'class': 'switched',
+            'data-switch-on': 'initial_state',
+            'data-initial_state-master': _('Replica Count')
+        }))
 
     class Meta(object):
         name = _("Advanced")
         help_text_template = "project/databases/_launch_advanced_help.html"
+
+    def populate_config_choices(self, request, context):
+        try:
+            configs = api.trove.configuration_list(request)
+            config_name = "%(name)s (%(datastore)s - %(version)s)"
+            choices = [(c.id,
+                        config_name % {'name': c.name,
+                                       'datastore': c.datastore_name,
+                                       'version': c.datastore_version_name})
+                       for c in configs]
+        except Exception:
+            choices = []
+
+        if choices:
+            choices.insert(0, ("", _("Select configuration")))
+        else:
+            choices.insert(0, ("", _("No configurations available")))
+        return choices
 
     def populate_backup_choices(self, request, context):
         try:
@@ -289,11 +386,21 @@ class AdvancedAction(workflows.Action):
             choices.insert(0, ("", _("No backups available")))
         return choices
 
+    def _get_instances(self):
+        instances = []
+        try:
+            instances = api.trove.instance_list_all(self.request)
+        except Exception:
+            msg = _('Unable to retrieve database instances.')
+            exceptions.handle(self.request, msg)
+        return instances
+
     def populate_master_choices(self, request, context):
         try:
-            instances = api.trove.instance_list(request)
-            choices = [(i.id, i.name) for i in
-                       instances if i.status == 'ACTIVE']
+            instances = self._get_instances()
+            choices = sorted([(i.id, i.name) for i in
+                             instances if i.status == 'ACTIVE'],
+                             key=lambda i: i[1])
         except Exception:
             choices = []
 
@@ -306,9 +413,23 @@ class AdvancedAction(workflows.Action):
     def clean(self):
         cleaned_data = super(AdvancedAction, self).clean()
 
+        config = self.cleaned_data['config']
+        if config:
+            try:
+                # Make sure the user is not "hacking" the form
+                # and that they have access to this configuration
+                cfg = api.trove.configuration_get(self.request, config)
+                self.cleaned_data['config'] = cfg.id
+            except Exception:
+                raise forms.ValidationError(_("Unable to find configuration "
+                                              "group!"))
+        else:
+            self.cleaned_data['config'] = None
+
         initial_state = cleaned_data.get("initial_state")
 
         if initial_state == 'backup':
+            cleaned_data['replica_count'] = None
             backup = self.cleaned_data['backup']
             if backup:
                 try:
@@ -336,13 +457,14 @@ class AdvancedAction(workflows.Action):
         else:
             cleaned_data['master'] = None
             cleaned_data['backup'] = None
+            cleaned_data['replica_count'] = None
 
         return cleaned_data
 
 
 class Advanced(workflows.Step):
     action_class = AdvancedAction
-    contributes = ['backup', 'master']
+    contributes = ['config', 'backup', 'master', 'replica_count']
 
 
 class LaunchInstance(workflows.Workflow):
@@ -353,7 +475,7 @@ class LaunchInstance(workflows.Workflow):
     failure_message = _('Unable to launch %(count)s named "%(name)s".')
     success_url = "horizon:project:databases:index"
     default_steps = (SetInstanceDetails,
-                     SetNetwork,
+                     dash_create_instance.SetNetwork,
                      InitializeDatabase,
                      Advanced)
 
@@ -409,21 +531,36 @@ class LaunchInstance(workflows.Workflow):
             volume_type = context['volume_type']
         return volume_type
 
+    def _get_locality(self, context):
+        # If creating a replica from a master then always set to None
+        if context.get('master'):
+            return None
+
+        locality = None
+        if context.get('locality'):
+            locality = context['locality']
+        return locality
+
     def handle(self, request, context):
         try:
-            datastore = self.context['datastore'].split(',')[0]
-            datastore_version = self.context['datastore'].split(',')[1]
+            datastore, datastore_version = parse_datastore_and_version_text(
+                binascii.unhexlify(self.context['datastore']))
+            avail_zone = context.get('availability_zone', None)
             LOG.info("Launching database instance with parameters "
                      "{name=%s, volume=%s, volume_type=%s, flavor=%s, "
                      "datastore=%s, datastore_version=%s, "
                      "dbs=%s, users=%s, "
-                     "backups=%s, nics=%s, replica_of=%s}",
+                     "backups=%s, nics=%s, replica_of=%s replica_count=%s, "
+                     "configuration=%s, locality=%s, "
+                     "availability_zone=%s}",
                      context['name'], context['volume'],
                      self._get_volume_type(context), context['flavor'],
                      datastore, datastore_version,
                      self._get_databases(context), self._get_users(context),
                      self._get_backup(context), self._get_nics(context),
-                     context.get('master'))
+                     context.get('master'), context['replica_count'],
+                     context.get('config'), self._get_locality(context),
+                     avail_zone)
             api.trove.instance_create(request,
                                       context['name'],
                                       context['volume'],
@@ -435,8 +572,12 @@ class LaunchInstance(workflows.Workflow):
                                       restore_point=self._get_backup(context),
                                       nics=self._get_nics(context),
                                       replica_of=context.get('master'),
+                                      replica_count=context['replica_count'],
                                       volume_type=self._get_volume_type(
-                                          context))
+                                          context),
+                                      configuration=context.get('config'),
+                                      locality=self._get_locality(context),
+                                      availability_zone=avail_zone)
             return True
         except Exception:
             exceptions.handle(request)
