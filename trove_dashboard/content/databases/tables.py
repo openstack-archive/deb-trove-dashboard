@@ -36,7 +36,7 @@ from trove_dashboard.content.database_backups \
 ACTIVE_STATES = ("ACTIVE",)
 
 
-class DeleteInstance(tables.BatchAction):
+class DeleteInstance(tables.DeleteAction):
     help_text = _("Deleted instances are not recoverable.")
 
     @staticmethod
@@ -59,7 +59,7 @@ class DeleteInstance(tables.BatchAction):
     classes = ("btn-danger", )
     icon = "remove"
 
-    def action(self, request, obj_id):
+    def delete(self, request, obj_id):
         api.trove.instance_delete(request, obj_id)
 
 
@@ -88,7 +88,8 @@ class RestartInstance(tables.BatchAction):
 
     def allowed(self, request, instance=None):
         return ((instance.status in ACTIVE_STATES
-                 or instance.status == 'SHUTDOWN'))
+                 or instance.status == 'SHUTDOWN'
+                 or instance.status == 'RESTART_REQUIRED'))
 
     def action(self, request, obj_id):
         api.trove.instance_restart(request, obj_id)
@@ -120,6 +121,49 @@ class DetachReplica(tables.BatchAction):
 
     def action(self, request, obj_id):
         api.trove.instance_detach_replica(request, obj_id)
+
+
+class PromoteToReplicaSource(tables.LinkAction):
+    name = "promote_to_replica_source"
+    verbose_name = _("Promote to Replica Source")
+    url = "horizon:project:databases:promote_to_replica_source"
+    classes = ("ajax-modal", "btn-promote-to-replica-source")
+
+    def allowed(self, request, instance=None):
+        return (instance.status in ACTIVE_STATES
+                and hasattr(instance, 'replica_of'))
+
+    def get_link_url(self, datum):
+        instance_id = self.table.get_object_id(datum)
+        return urlresolvers.reverse(self.url, args=[instance_id])
+
+
+class EjectReplicaSource(tables.BatchAction):
+    @staticmethod
+    def action_present(count):
+        return ungettext_lazy(
+            u"Eject Replica Source",
+            u"Eject Replica Sources",
+            count
+        )
+
+    @staticmethod
+    def action_past(count):
+        return ungettext_lazy(
+            u"Ejected Replica Source",
+            u"Ejected Replica Sources",
+            count
+        )
+
+    name = "eject_replica_source"
+    classes = ('btn-danger', 'btn-eject-replica-source')
+
+    def _allowed(self, request, instance=None):
+        return (instance.status != 'PROMOTE'
+                and hasattr(instance, 'replicas'))
+
+    def action(self, request, obj_id):
+        api.trove.eject_replica_source(request, obj_id)
 
 
 class GrantAccess(tables.BatchAction):
@@ -410,7 +454,49 @@ class ResizeInstance(tables.LinkAction):
         return urlresolvers.reverse(self.url, args=[instance_id])
 
 
-class RootAction(tables.Action):
+class AttachConfiguration(tables.LinkAction):
+    name = "attach_configuration"
+    verbose_name = _("Attach Configuration Group")
+    url = "horizon:project:databases:attach_config"
+    classes = ("btn-attach-config", "ajax-modal")
+
+    def allowed(self, request, instance=None):
+        return (instance.status in ACTIVE_STATES
+                and not hasattr(instance, 'configuration'))
+
+
+class DetachConfiguration(tables.BatchAction):
+    @staticmethod
+    def action_present(count):
+        return ungettext_lazy(
+            u"Detach Configuration Group",
+            u"Detach Configuration Groups",
+            count
+        )
+
+    @staticmethod
+    def action_past(count):
+        return ungettext_lazy(
+            u"Detached Configuration Group",
+            u"Detached Configuration Groups",
+            count
+        )
+
+    name = "detach_configuration"
+    classes = ('btn-danger', 'btn-detach-config')
+
+    def allowed(self, request, instance=None):
+        return (instance.status in ACTIVE_STATES and
+                hasattr(instance, 'configuration'))
+
+    def action(self, request, obj_id):
+        api.trove.instance_detach_configuration(request, obj_id)
+
+
+class EnableRootAction(tables.Action):
+    name = "enable_root_action"
+    verbose_name = _("Enable Root")
+
     def handle(self, table, request, obj_ids):
         try:
             username, password = api.trove.root_enable(request, obj_ids)
@@ -420,22 +506,22 @@ class RootAction(tables.Action):
             messages.error(request, _('There was a problem enabling root.'))
 
 
-class EnableRootAction(RootAction):
-    name = "enable_root_action"
-    verbose_name = _("Enable Root")
-
-    def allowed(self, request, instance):
-        enabled = api.trove.root_show(request, instance.id)
-        return not enabled.rootEnabled
-
-
-class ResetRootAction(RootAction):
-    name = "reset_root_action"
-    verbose_name = _("Reset Password")
+class DisableRootAction(tables.Action):
+    name = "disable_root_action"
+    verbose_name = _("Disable Root")
 
     def allowed(self, request, instance):
         enabled = api.trove.root_show(request, instance.id)
         return enabled.rootEnabled
+
+    def single(self, table, request, object_id):
+        try:
+            api.trove.root_disable(request, object_id)
+            table.data[0].password = None
+            messages.success(request, _("Successfully disabled root access."))
+        except Exception as e:
+            messages.warning(request,
+                             _("Cannot disable root access: %s") % e.message)
 
 
 class ManageRoot(tables.LinkAction):
@@ -453,7 +539,8 @@ class ManageRoot(tables.LinkAction):
 
 class ManageRootTable(tables.DataTable):
     name = tables.Column('name', verbose_name=_('Instance Name'))
-    enabled = tables.Column('enabled', verbose_name=_('Root Enabled'),
+    enabled = tables.Column('enabled',
+                            verbose_name=_('Has Root Ever Been Enabled'),
                             filters=(d_filters.yesno, d_filters.capfirst),
                             help_text=_("Status if root was ever enabled "
                                         "for an instance."))
@@ -465,7 +552,7 @@ class ManageRootTable(tables.DataTable):
     class Meta(object):
         name = "manage_root"
         verbose_name = _("Manage Root")
-        row_actions = (EnableRootAction, ResetRootAction,)
+        row_actions = (EnableRootAction, DisableRootAction,)
 
 
 class UpdateRow(tables.Row):
@@ -544,13 +631,13 @@ class InstancesTable(tables.DataTable):
         ("BLOCKED", pgettext_lazy("Current status of a Database Instance",
                                   u"Blocked")),
         ("BUILD", pgettext_lazy("Current status of a Database Instance",
-                                u"Build")),
+                                u"Building")),
         ("FAILED", pgettext_lazy("Current status of a Database Instance",
                                  u"Failed")),
         ("REBOOT", pgettext_lazy("Current status of a Database Instance",
-                                 u"Reboot")),
+                                 u"Rebooting")),
         ("RESIZE", pgettext_lazy("Current status of a Database Instance",
-                                 u"Resize")),
+                                 u"Resizing")),
         ("BACKUP", pgettext_lazy("Current status of a Database Instance",
                                  u"Backup")),
         ("SHUTDOWN", pgettext_lazy("Current status of a Database Instance",
@@ -590,9 +677,13 @@ class InstancesTable(tables.DataTable):
         row_actions = (CreateBackup,
                        ResizeVolume,
                        ResizeInstance,
+                       PromoteToReplicaSource,
+                       AttachConfiguration,
+                       DetachConfiguration,
                        ManageRoot,
-                       RestartInstance,
+                       EjectReplicaSource,
                        DetachReplica,
+                       RestartInstance,
                        DeleteInstance)
 
 
@@ -655,3 +746,15 @@ class InstanceBackupsTable(tables.DataTable):
         row_class = UpdateRow
         table_actions = (backup_tables.LaunchLink, backup_tables.DeleteBackup)
         row_actions = (backup_tables.RestoreLink, backup_tables.DeleteBackup)
+
+
+class ConfigDefaultsTable(tables.DataTable):
+    name = tables.Column('name', verbose_name=_('Property'))
+    value = tables.Column('value', verbose_name=_('Value'))
+
+    class Meta(object):
+        name = 'config_defaults'
+        verbose_name = _('Configuration Defaults')
+
+    def get_object_id(self, datum):
+        return datum.name

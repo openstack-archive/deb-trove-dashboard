@@ -1,4 +1,4 @@
-trove-dashboard (6.0.0-3) UNRELEASED; urgency=medium
+trove-dashboard (7.0.0~rc2-1) experimental; urgency=medium
 
   [ Ondřej Nový ]
   * Standards-Version is 3.9.8 now (no change)
@@ -7,8 +7,12 @@ trove-dashboard (6.0.0-3) UNRELEASED; urgency=medium
   [ Thomas Goirand ]
   * Added missing EPOC in (build-)depends: openstack-dashboard.
   * Missing EPOC for keystoneclient and swiftclient as well.
+  * New upstream release.
+  * Using OpenStack's Gerrit as VCS URLs:
+    - Point .gitreview to packaging-deb project.
+    - Add .gitreview to extend-diff-ignore.
 
- -- Thomas Goirand <zigo@debian.org>  Wed, 20 Jul 2016 10:01:25 +0000
+ -- Thomas Goirand <zigo@debian.org>  Wed, 28 Sep 2016 17:58:57 +0200
 
 trove-dashboard (6.0.0-1) unstable; urgency=medium
 

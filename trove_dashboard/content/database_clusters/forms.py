@@ -69,6 +69,15 @@ class LaunchForm(forms.SelfHandlingForm):
         min_value=0,
         initial=1,
         help_text=_("Size of the volume in GB."))
+    locality = forms.ChoiceField(
+        label=_("Locality"),
+        choices=[("", "None"),
+                 ("affinity", "affinity"),
+                 ("anti-affinity", "anti-affinity")],
+        required=False,
+        help_text=_("Specify whether instances in the cluster will "
+                    "be created on the same hypervisor (affinity) or on "
+                    "different hypervisors (anti-affinity)."))
     root_password = forms.CharField(
         label=_("Root Password"),
         required=False,
@@ -158,6 +167,9 @@ class LaunchForm(forms.SelfHandlingForm):
                         msg = _("The number of shards must be greater than 1.")
                         self._errors["num_shards"] = self.error_class([msg])
 
+        if not self.data.get("locality", None):
+            self.cleaned_data["locality"] = None
+
         return self.cleaned_data
 
     @memoized.memoized_method
@@ -183,7 +195,7 @@ class LaunchForm(forms.SelfHandlingForm):
 
             versions = self.datastore_versions(request, ds.name)
             for version in versions:
-                if version.name == "inactive":
+                if hasattr(version, 'active') and not version.active:
                     continue
                 valid_flavor = self.datastore_flavors(request, ds.name,
                                                       versions[0].name)
@@ -253,7 +265,7 @@ class LaunchForm(forms.SelfHandlingForm):
                     # only add to choices if datastore has at least one version
                     version_choices = ()
                     for v in versions:
-                        if "inactive" in v.name:
+                        if hasattr(v, 'active') and not v.active:
                             continue
                         selection_text = ds.name + ' - ' + v.name
                         widget_text = ds.name + '-' + v.name
@@ -280,6 +292,12 @@ class LaunchForm(forms.SelfHandlingForm):
             if attr_key not in widget.attrs:
                 widget.attrs[attr_key] = field[1]
 
+    def _get_locality(self, data):
+        locality = None
+        if data.get('locality'):
+            locality = data['locality']
+        return locality
+
     @sensitive_variables('data')
     def handle(self, request, data):
         try:
@@ -295,8 +313,9 @@ class LaunchForm(forms.SelfHandlingForm):
             LOG.info("Launching cluster with parameters "
                      "{name=%s, volume=%s, flavor=%s, "
                      "datastore=%s, datastore_version=%s",
+                     "locality=%s",
                      data['name'], data['volume'], final_flavor,
-                     datastore, datastore_version)
+                     datastore, datastore_version, self._get_locality(data))
 
             trove_api.trove.cluster_create(request,
                                            data['name'],
@@ -306,7 +325,8 @@ class LaunchForm(forms.SelfHandlingForm):
                                            datastore=datastore,
                                            datastore_version=datastore_version,
                                            nics=data['network'],
-                                           root_password=root_password)
+                                           root_password=root_password,
+                                           locality=self._get_locality(data))
             messages.success(request,
                              _('Launched cluster "%s"') % data['name'])
             return True
@@ -343,11 +363,17 @@ class ClusterAddInstanceForm(forms.SelfHandlingForm):
         help_text=_("Optional datastore specific value that defines the "
                     "relationship from one instance in the cluster to "
                     "another."))
+    network = forms.ChoiceField(
+        label=_("Network"),
+        help_text=_("Network attached to instance."),
+        required=False)
 
     def __init__(self, request, *args, **kwargs):
         super(ClusterAddInstanceForm, self).__init__(request, *args, **kwargs)
-
+        self.fields['cluster_id'].initial = kwargs['initial']['cluster_id']
         self.fields['flavor'].choices = self.populate_flavor_choices(request)
+        self.fields['network'].choices = self.populate_network_choices(
+            request)
 
     @memoized.memoized_method
     def flavors(self, request):
@@ -374,6 +400,26 @@ class ClusterAddInstanceForm(forms.SelfHandlingForm):
         flavor_list = [(f.id, "%s" % f.name) for f in self.flavors(request)]
         return sorted(flavor_list)
 
+    @memoized.memoized_method
+    def populate_network_choices(self, request):
+        network_list = []
+        try:
+            if api.base.is_service_enabled(request, 'network'):
+                tenant_id = self.request.user.tenant_id
+                networks = api.neutron.network_list_for_tenant(request,
+                                                               tenant_id)
+                network_list = [(network.id, network.name_or_id)
+                                for network in networks]
+            else:
+                self.fields['network'].widget = forms.HiddenInput()
+        except exceptions.ServiceCatalogException:
+            network_list = []
+            redirect = reverse('horizon:project:database_clusters:index')
+            exceptions.handle(request,
+                              _('Unable to retrieve networks.'),
+                              redirect=redirect)
+        return network_list
+
     def handle(self, request, data):
         try:
             flavor = trove_api.trove.flavor_get(request, data['flavor'])
@@ -384,7 +430,8 @@ class ClusterAddInstanceForm(forms.SelfHandlingForm):
                                  flavor.name,
                                  data['volume'],
                                  data.get('type', None),
-                                 data.get('related_to', None))
+                                 data.get('related_to', None),
+                                 data.get('network', None))
         except Exception as e:
             redirect = reverse("horizon:project:database_clusters:index")
             exceptions.handle(request,

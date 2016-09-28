@@ -76,7 +76,6 @@ class ClusterGrow(tables.LinkAction):
     name = "cluster_grow"
     verbose_name = _("Grow Cluster")
     url = "horizon:project:database_clusters:cluster_grow_details"
-    icon = "plus"
 
     def allowed(self, request, cluster=None):
         if (cluster and cluster.task["name"] == 'NONE' and
@@ -89,8 +88,6 @@ class ClusterShrink(tables.LinkAction):
     name = "cluster_shrink"
     verbose_name = _("Shrink Cluster")
     url = "horizon:project:database_clusters:cluster_shrink_details"
-    classes = ("btn-danger",)
-    icon = "remove"
 
     def allowed(self, request, cluster=None):
         if (cluster and cluster.task["name"] == 'NONE' and
@@ -392,10 +389,11 @@ class ClusterGrowAction(tables.Action):
         datum_display_objs = []
         for instance in table.data:
             msg = _("[flavor=%(flavor)s, volume=%(volume)s, name=%(name)s, "
-                    "type=%(type)s, related_to=%(related_to)s]")
+                    "type=%(type)s, related_to=%(related_to)s, "
+                    "nics=%(nics)s]")
             params = {"flavor": instance.flavor_id, "volume": instance.volume,
                       "name": instance.name, "type": instance.type,
-                      "related_to": instance.related_to}
+                      "related_to": instance.related_to, "nics": instance.nics}
             datum_display_objs.append(msg % params)
         display_str = functions.lazy_join(", ", datum_display_objs)
 
@@ -426,6 +424,7 @@ class ClusterGrowInstancesTable(tables.DataTable):
     volume = tables.Column("volume", verbose_name=_("Volume"))
     type = tables.Column("type", verbose_name=_("Instance Type"))
     related_to = tables.Column("related_to", verbose_name=_("Related To"))
+    nics = tables.Column("nics", verbose_name=_("Network"))
 
     class Meta(object):
         name = "cluster_grow_instances_table"

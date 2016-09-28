@@ -10,7 +10,7 @@ Build-Depends: debhelper (>= 9),
                python-pbr (>= 1.8),
                python-setuptools,
                python-sphinx,
-Build-Depends-Indep: openstack-dashboard (>= 3:9.0.0),
+Build-Depends-Indep: openstack-dashboard (>= 3:10.0.0~rc2),
                      python-babel,
                      python-coverage,
                      python-ddt (>= 0.7.0),
@@ -34,13 +34,13 @@ Build-Depends-Indep: openstack-dashboard (>= 3:9.0.0),
                      subunit,
                      testrepository,
 Standards-Version: 3.9.8
-Vcs-Git: https://anonscm.debian.org/git/openstack/trove-dashboard.git
-Vcs-Browser: https://anonscm.debian.org/cgit/openstack/trove-dashboard.git/
+Vcs-Git: https://git.openstack.org/openstack/deb-trove-dashboard -b debian/newton
+Vcs-Browser: https://git.openstack.org/cgit/openstack/deb-trove-dashboard?h=debian%2Fnewton
 Homepage: https://github.com/stackforge/trove-dashboard
 
 Package: python-trove-dashboard
 Architecture: all
-Depends: openstack-dashboard (>= 3:9.0.0),
+Depends: openstack-dashboard (>= 3:10.0.0~rc2),
          python-babel,
          python-django (>= 1.8),
          python-django-compressor (>= 1.4),

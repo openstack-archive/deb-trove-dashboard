@@ -12,13 +12,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
+
 from django import template
 from django.utils.translation import ugettext_lazy as _
 
 from horizon import exceptions
 from horizon import tabs
 from trove_dashboard import api
+from trove_dashboard.content.database_configurations import (
+    config_param_manager)
+from trove_dashboard.content.databases import db_capability
+from trove_dashboard.content.databases.logs import tables as log_tables
 from trove_dashboard.content.databases import tables
+
+
+LOG = logging.getLogger(__name__)
 
 
 class OverviewTab(tabs.Tab):
@@ -39,8 +48,8 @@ class OverviewTab(tabs.Tab):
 
     def get_template_name(self, request):
         instance = self.tab_group.kwargs['instance']
-        template_file = ('project/databases/_detail_overview_%s.html'
-                         % instance.datastore['type'])
+        template_file = ('project/databases/_detail_overview_%s.html' %
+                         self._get_template_type(instance.datastore['type']))
         try:
             template.loader.get_template(template_file)
             return template_file
@@ -48,6 +57,12 @@ class OverviewTab(tabs.Tab):
             # This datastore type does not have a template file
             # Just use the base template file
             return ('project/databases/_detail_overview.html')
+
+    def _get_template_type(self, datastore):
+        if db_capability.is_mysql_compatible(datastore):
+            return 'mysql'
+
+        return datastore
 
 
 class UserTab(tabs.TableTab):
@@ -107,6 +122,25 @@ class DatabaseTab(tabs.TableTab):
         return tables.has_database_add_perm(request)
 
 
+class ConfigDefaultsTab(tabs.TableTab):
+    table_classes = [tables.ConfigDefaultsTable]
+    name = _("Defaults")
+    slug = "config_defaults"
+    instance = None
+    template_name = "horizon/common/_detail_table.html"
+    preload = False
+
+    def get_config_defaults_data(self):
+        instance = self.tab_group.kwargs['instance']
+        values_data = []
+        data = api.trove.configuration_default(self.request, instance.id)
+        if data is not None:
+            for k, v in data.configuration.items():
+                values_data.append(
+                    config_param_manager.ConfigParam(None, k, v))
+        return sorted(values_data, key=lambda config: config.name)
+
+
 class BackupsTab(tabs.TableTab):
     table_classes = [tables.InstanceBackupsTable]
     name = _("Backups")
@@ -129,7 +163,27 @@ class BackupsTab(tabs.TableTab):
         return request.user.has_perm('openstack.services.object-store')
 
 
+class LogsTab(tabs.TableTab):
+    table_classes = [log_tables.LogsTable]
+    name = _("Logs")
+    slug = "logs_tab"
+    template_name = "horizon/common/_detail_table.html"
+    preload = False
+
+    def get_logs_data(self):
+        instance = self.tab_group.kwargs['instance']
+        try:
+            logs = api.trove.log_list(self.request, instance.id)
+            return logs
+        except Exception as e:
+            LOG.exception(
+                _('Unable to retrieve list of logs.\n%s') % e.message)
+            logs = []
+        return logs
+
+
 class InstanceDetailTabs(tabs.TabGroup):
     slug = "instance_details"
-    tabs = (OverviewTab, UserTab, DatabaseTab, BackupsTab)
+    tabs = (OverviewTab, UserTab, DatabaseTab, BackupsTab, LogsTab,
+            ConfigDefaultsTab)
     sticky = True
