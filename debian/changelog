@@ -1,10 +1,8 @@
-trove-dashboard (7.0.0~rc2-1) experimental; urgency=medium
-
-  [ Ondřej Nový ]
-  * Standards-Version is 3.9.8 now (no change)
-  * d/rules: Removed UPSTREAM_GIT with default value
+trove-dashboard (7.0.0-1) unstable; urgency=medium
 
   [ Thomas Goirand ]
+  * New upstream release.
+  * Uploading to unstable.
   * Added missing EPOC in (build-)depends: openstack-dashboard.
   * Missing EPOC for keystoneclient and swiftclient as well.
   * New upstream release.
@@ -12,7 +10,11 @@ trove-dashboard (7.0.0~rc2-1) experimental; urgency=medium
     - Point .gitreview to packaging-deb project.
     - Add .gitreview to extend-diff-ignore.
 
- -- Thomas Goirand <zigo@debian.org>  Wed, 28 Sep 2016 17:58:57 +0200
+  [ Ondřej Nový ]
+  * Standards-Version is 3.9.8 now (no change)
+  * d/rules: Removed UPSTREAM_GIT with default value
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 06 Oct 2016 18:28:06 +0200
 
 trove-dashboard (6.0.0-1) unstable; urgency=medium
 
