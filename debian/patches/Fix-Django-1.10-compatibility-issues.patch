@@ -1,0 +1,209 @@
+Description: [PATCH] Fix Django 1.10 compatibility issues.
+Author: Ivan Udovichenko <iudovichenko@mirantis.com>
+Forwarded: no
+Last-Update: 2016-10-06
+
+---
+ trove_dashboard/content/database_backups/urls.py   | 15 ++++++-------
+ trove_dashboard/content/database_clusters/urls.py  | 25 +++++++++++-----------
+ .../content/database_configurations/urls.py        | 19 ++++++++--------
+ trove_dashboard/content/databases/logs/urls.py     | 16 +++++++-------
+ trove_dashboard/content/databases/urls.py          |  6 ++----
+ trove_dashboard/test/urls.py                       |  5 ++---
+ 6 files changed, 41 insertions(+), 45 deletions(-)
+
+diff --git a/trove_dashboard/content/database_backups/urls.py b/trove_dashboard/content/database_backups/urls.py
+index 7cfe69e..e73e60c 100644
+--- a/trove_dashboard/content/database_backups/urls.py
++++ b/trove_dashboard/content/database_backups/urls.py
+@@ -12,15 +12,14 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-from django.conf.urls import patterns
+ from django.conf.urls import url
+ 
+-from trove_dashboard.content.database_backups import views
++from trove_dashboard.content.database_backups.views \
++    import IndexView, BackupView, DetailView
+ 
+-urlpatterns = patterns(
+-    '',
+-    url(r'^$', views.IndexView.as_view(), name='index'),
+-    url(r'^create$', views.BackupView.as_view(), name='create'),
+-    url(r'^(?P<backup_id>[^/]+)/$', views.DetailView.as_view(),
++urlpatterns = [
++    url(r'^$', IndexView.as_view(), name='index'),
++    url(r'^create$', BackupView.as_view(), name='create'),
++    url(r'^(?P<backup_id>[^/]+)/$', DetailView.as_view(),
+         name='detail'),
+-)
++]
+diff --git a/trove_dashboard/content/database_clusters/urls.py b/trove_dashboard/content/database_clusters/urls.py
+index 076ac51..4fbf350 100644
+--- a/trove_dashboard/content/database_clusters/urls.py
++++ b/trove_dashboard/content/database_clusters/urls.py
+@@ -14,29 +14,30 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-from django.conf.urls import patterns  # noqa
+ from django.conf.urls import url  # noqa
+ 
+-from trove_dashboard.content.database_clusters import views
++from trove_dashboard.content.database_clusters.views \
++    import IndexView, LaunchClusterView, DetailView, \
++    ClusterGrowView, ClusterAddInstancesView, ClusterShrinkView, \
++    ResetPasswordView
+ 
+ CLUSTERS = r'^(?P<cluster_id>[^/]+)/%s$'
+ 
+-urlpatterns = patterns(
+-    '',
+-    url(r'^$', views.IndexView.as_view(), name='index'),
+-    url(r'^launch$', views.LaunchClusterView.as_view(), name='launch'),
+-    url(r'^(?P<cluster_id>[^/]+)/$', views.DetailView.as_view(),
++urlpatterns = [
++    url(r'^$', IndexView.as_view(), name='index'),
++    url(r'^launch$', LaunchClusterView.as_view(), name='launch'),
++    url(r'^(?P<cluster_id>[^/]+)/$', DetailView.as_view(),
+         name='detail'),
+     url(CLUSTERS % 'cluster_grow_details',
+-        views.ClusterGrowView.as_view(),
++        ClusterGrowView.as_view(),
+         name='cluster_grow_details'),
+     url(CLUSTERS % 'add_instance',
+-        views.ClusterAddInstancesView.as_view(),
++        ClusterAddInstancesView.as_view(),
+         name='add_instance'),
+     url(CLUSTERS % 'cluster_shrink_details',
+-        views.ClusterShrinkView.as_view(),
++        ClusterShrinkView.as_view(),
+         name='cluster_shrink_details'),
+     url(CLUSTERS % 'reset_password',
+-        views.ResetPasswordView.as_view(),
++        ResetPasswordView.as_view(),
+         name='reset_password'),
+-)
++]
+diff --git a/trove_dashboard/content/database_configurations/urls.py b/trove_dashboard/content/database_configurations/urls.py
+index f6ec81e..58c8b7e 100644
+--- a/trove_dashboard/content/database_configurations/urls.py
++++ b/trove_dashboard/content/database_configurations/urls.py
+@@ -12,28 +12,27 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-from django.conf.urls import patterns  # noqa
+ from django.conf.urls import url  # noqa
+ 
+-from trove_dashboard.content.database_configurations \
+-    import views
++from trove_dashboard.content.database_configurations.views \
++    import IndexView, CreateConfigurationView, \
++    DetailView, AddParameterView
+ 
+ 
+ CONFIGS = r'^(?P<configuration_id>[^/]+)/%s$'
+ 
+ 
+-urlpatterns = patterns(
+-    '',
++urlpatterns = [
+     url(r'^$',
+-        views.IndexView.as_view(),
++        IndexView.as_view(),
+         name='index'),
+     url(r'^create$',
+-        views.CreateConfigurationView.as_view(),
++        CreateConfigurationView.as_view(),
+         name='create'),
+     url(CONFIGS % '',
+-        views.DetailView.as_view(),
++        DetailView.as_view(),
+         name='detail'),
+     url(CONFIGS % 'add',
+-        views.AddParameterView.as_view(),
++        AddParameterView.as_view(),
+         name='add')
+-)
++]
+diff --git a/trove_dashboard/content/databases/logs/urls.py b/trove_dashboard/content/databases/logs/urls.py
+index ae734e8..b08d77e 100644
+--- a/trove_dashboard/content/databases/logs/urls.py
++++ b/trove_dashboard/content/databases/logs/urls.py
+@@ -12,21 +12,21 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-from django.conf.urls import patterns
+ from django.conf.urls import url
+ 
+-from trove_dashboard.content.databases.logs import views
++from trove_dashboard.content.databases.logs.views \
++    import LogContentsView, console, download_log, full_log
+ 
+ 
+ VIEWS_MOD = ('trove_dashboard.content.databases.logs.views')
+ 
+ LOGS = r'^(?P<filename>[^/]+)/%s$'
+ 
+-urlpatterns = patterns(
++urlpatterns = [
+     VIEWS_MOD,
+-    url(LOGS % 'console', 'console', name='console'),
+-    url(LOGS % 'download_log', 'download_log', name='download_log'),
+-    url(LOGS % 'full_log', 'full_log', name='full_log'),
++    url(LOGS % 'console', console, name='console'),
++    url(LOGS % 'download_log', download_log, name='download_log'),
++    url(LOGS % 'full_log', full_log, name='full_log'),
+     url(LOGS % 'log_contents',
+-        views.LogContentsView.as_view(), name='log_contents'),
+-)
++        LogContentsView.as_view(), name='log_contents'),
++]
+diff --git a/trove_dashboard/content/databases/urls.py b/trove_dashboard/content/databases/urls.py
+index 1ae2a49..eb08873 100644
+--- a/trove_dashboard/content/databases/urls.py
++++ b/trove_dashboard/content/databases/urls.py
+@@ -13,7 +13,6 @@
+ #    under the License.
+ 
+ from django.conf.urls import include
+-from django.conf.urls import patterns
+ from django.conf.urls import url
+ 
+ from trove_dashboard.content.databases.logs import urls as logs_urls
+@@ -24,8 +23,7 @@ INSTANCES = BASEINSTANCES + '$'
+ USERS = r'^(?P<instance_id>[^/]+)/(?P<user_name>[^/]+)/%s$'
+ 
+ 
+-urlpatterns = patterns(
+-    '',
++urlpatterns = [
+     url(r'^$', views.IndexView.as_view(), name='index'),
+     url(r'^launch$', views.LaunchInstanceView.as_view(), name='launch'),
+     url(INSTANCES % '', views.DetailView.as_view(), name='detail'),
+@@ -49,4 +47,4 @@ urlpatterns = patterns(
+     url(INSTANCES % 'manage_root', views.ManageRootView.as_view(),
+         name='manage_root'),
+     url(BASEINSTANCES % 'logs/', include(logs_urls, namespace='logs')),
+-)
++]
+diff --git a/trove_dashboard/test/urls.py b/trove_dashboard/test/urls.py
+index 9bef20f..cf28475 100644
+--- a/trove_dashboard/test/urls.py
++++ b/trove_dashboard/test/urls.py
+@@ -14,7 +14,6 @@
+ from django.conf import urls
+ import openstack_dashboard.urls
+ 
+-urlpatterns = urls.patterns(
+-    '',
++urlpatterns = [
+     urls.url(r'', urls.include(openstack_dashboard.urls))
+-)
++]
+-- 
+2.9.3
+
