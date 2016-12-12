@@ -1,0 +1,270 @@
+Description: Fix Django 1.10 Compatibility
+ Fixes a number of django 1.9 and 1.10 issues.
+ .
+ Also adds test environments for both.
+Author: Rob Cresswell <robert.cresswell@outlook.com>
+Date: Tue, 4 Oct 2016 14:51:43 +0000 (+0100)
+X-Git-Url: https://review.openstack.org/gitweb?p=openstack%2Ftrove-dashboard.git;a=commitdiff_plain;h=0c9dab4e6b4a21ffe5c1b1bd353a77019703543c
+Change-Id: Ic76ed18880170b8eaf25b4e183a5bc92bbbb82d9
+Co-Authored-By: Duk Loi <duk@tesora.com>
+
+diff --git a/tox.ini b/tox.ini
+index 2499a3d..7e34976 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -33,6 +33,16 @@ basepython = python2.7
+ commands = pip install django>=1.8,<1.9
+            /bin/bash run_tests.sh -N --no-pep8 {posargs}
+ 
++[testenv:py27dj19]
++basepython = python2.7
++commands = pip install django>=1.9,<1.10
++           /bin/bash run_tests.sh -N --no-pep8 {posargs}
++
++[testenv:py27dj110]
++basepython = python2.7
++commands = pip install django>=1.10,<1.11
++           /bin/bash run_tests.sh -N --no-pep8 {posargs}
++
+ [testenv:py27integration]
+ basepython = python2.7
+ commands = /bin/bash run_tests.sh -N --integration --selenium-headless {posargs}
+diff --git a/trove_dashboard/content/database_backups/urls.py b/trove_dashboard/content/database_backups/urls.py
+index 7cfe69e..1f7555c 100644
+--- a/trove_dashboard/content/database_backups/urls.py
++++ b/trove_dashboard/content/database_backups/urls.py
+@@ -12,15 +12,13 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-from django.conf.urls import patterns
+ from django.conf.urls import url
+ 
+ from trove_dashboard.content.database_backups import views
+ 
+-urlpatterns = patterns(
+-    '',
++urlpatterns = [
+     url(r'^$', views.IndexView.as_view(), name='index'),
+     url(r'^create$', views.BackupView.as_view(), name='create'),
+     url(r'^(?P<backup_id>[^/]+)/$', views.DetailView.as_view(),
+         name='detail'),
+-)
++]
+diff --git a/trove_dashboard/content/database_clusters/urls.py b/trove_dashboard/content/database_clusters/urls.py
+index 076ac51..b08a955 100644
+--- a/trove_dashboard/content/database_clusters/urls.py
++++ b/trove_dashboard/content/database_clusters/urls.py
+@@ -14,15 +14,13 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-from django.conf.urls import patterns  # noqa
+ from django.conf.urls import url  # noqa
+ 
+ from trove_dashboard.content.database_clusters import views
+ 
+ CLUSTERS = r'^(?P<cluster_id>[^/]+)/%s$'
+ 
+-urlpatterns = patterns(
+-    '',
++urlpatterns = [
+     url(r'^$', views.IndexView.as_view(), name='index'),
+     url(r'^launch$', views.LaunchClusterView.as_view(), name='launch'),
+     url(r'^(?P<cluster_id>[^/]+)/$', views.DetailView.as_view(),
+@@ -39,4 +37,4 @@ urlpatterns = patterns(
+     url(CLUSTERS % 'reset_password',
+         views.ResetPasswordView.as_view(),
+         name='reset_password'),
+-)
++]
+diff --git a/trove_dashboard/content/database_configurations/tests.py b/trove_dashboard/content/database_configurations/tests.py
+index b5630b2..20fba8f 100644
+--- a/trove_dashboard/content/database_configurations/tests.py
++++ b/trove_dashboard/content/database_configurations/tests.py
+@@ -14,7 +14,10 @@
+ 
+ import copy
+ import logging
++import six
+ 
++import django
++from django.conf import settings
+ from django.core.urlresolvers import reverse
+ from django import http
+ from mox3.mox import IsA  # noqa
+@@ -313,16 +316,15 @@ class DatabaseConfigurationsTests(test.TestCase):
+             config_param_mgr.original_configuration_values = \
+                 dict.copy(config.values)
+ 
+-            config_param_manager.get(IsA(http.HttpRequest), config.id) \
+-                .MultipleTimes().AndReturn(config_param_mgr)
+-
+-            ds = self._get_test_datastore('mysql')
+-            dsv = self._get_test_datastore_version(ds.id, '5.5')
+-            api.trove.configuration_parameters_list(
+-                IsA(http.HttpRequest),
+-                ds.name,
+-                dsv.name) \
+-                .AndReturn(self.configuration_parameters.list())
++            (config_param_manager.get(IsA(http.HttpRequest),
++                                      IsA(six.string_types))
++                .MultipleTimes()
++                .AndReturn(config_param_mgr))
++            (api.trove.configuration_parameters_list(IsA(http.HttpRequest),
++                                                     IsA(six.string_types),
++                                                     IsA(six.string_types))
++                .MultipleTimes()
++                .AndReturn(self.configuration_parameters.list()))
+ 
+             name = self.configuration_parameters.first().name
+             value = "non-numeric"
+@@ -360,6 +362,8 @@ class DatabaseConfigurationsTests(test.TestCase):
+                       .get_configuration().values)
+ 
+         res = self.client.post(url, {'action': u"values__discard_changes"})
++        if django.VERSION >= (1, 9):
++            url = settings.TESTSERVER + url
+         self.assertRedirectsNoFollow(res, url)
+ 
+         # get the state of the configuration after discard action
+@@ -400,6 +404,8 @@ class DatabaseConfigurationsTests(test.TestCase):
+ 
+         # apply changes
+         res = self.client.post(url, {'action': u"values__apply_changes"})
++        if django.VERSION >= (1, 9):
++            url = settings.TESTSERVER + url
+         self.assertRedirectsNoFollow(res, url)
+ 
+     @test.create_stubs({api.trove: ('configuration_instances',
+@@ -432,6 +438,8 @@ class DatabaseConfigurationsTests(test.TestCase):
+ 
+         # apply changes
+         res = self.client.post(url, {'action': u"values__apply_changes"})
++        if django.VERSION >= (1, 9):
++            url = settings.TESTSERVER + url
+         self.assertRedirectsNoFollow(res, url)
+         self.assertEqual(res.status_code, 302)
+ 
+diff --git a/trove_dashboard/content/database_configurations/urls.py b/trove_dashboard/content/database_configurations/urls.py
+index f6ec81e..71085a5 100644
+--- a/trove_dashboard/content/database_configurations/urls.py
++++ b/trove_dashboard/content/database_configurations/urls.py
+@@ -12,7 +12,6 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-from django.conf.urls import patterns  # noqa
+ from django.conf.urls import url  # noqa
+ 
+ from trove_dashboard.content.database_configurations \
+@@ -22,8 +21,7 @@ from trove_dashboard.content.database_configurations \
+ CONFIGS = r'^(?P<configuration_id>[^/]+)/%s$'
+ 
+ 
+-urlpatterns = patterns(
+-    '',
++urlpatterns = [
+     url(r'^$',
+         views.IndexView.as_view(),
+         name='index'),
+@@ -36,4 +34,4 @@ urlpatterns = patterns(
+     url(CONFIGS % 'add',
+         views.AddParameterView.as_view(),
+         name='add')
+-)
++]
+diff --git a/trove_dashboard/content/databases/logs/urls.py b/trove_dashboard/content/databases/logs/urls.py
+index ae734e8..4326e7b 100644
+--- a/trove_dashboard/content/databases/logs/urls.py
++++ b/trove_dashboard/content/databases/logs/urls.py
+@@ -12,21 +12,16 @@
+ #    License for the specific language governing permissions and limitations
+ #    under the License.
+ 
+-from django.conf.urls import patterns
+ from django.conf.urls import url
+ 
+ from trove_dashboard.content.databases.logs import views
+ 
+-
+-VIEWS_MOD = ('trove_dashboard.content.databases.logs.views')
+-
+ LOGS = r'^(?P<filename>[^/]+)/%s$'
+ 
+-urlpatterns = patterns(
+-    VIEWS_MOD,
+-    url(LOGS % 'console', 'console', name='console'),
+-    url(LOGS % 'download_log', 'download_log', name='download_log'),
+-    url(LOGS % 'full_log', 'full_log', name='full_log'),
++urlpatterns = [
++    url(LOGS % 'console', views.console, name='console'),
++    url(LOGS % 'download_log', views.download_log, name='download_log'),
++    url(LOGS % 'full_log', views.full_log, name='full_log'),
+     url(LOGS % 'log_contents',
+         views.LogContentsView.as_view(), name='log_contents'),
+-)
++]
+diff --git a/trove_dashboard/content/databases/templates/databases/logs/_detail_log.html b/trove_dashboard/content/databases/templates/databases/logs/_detail_log.html
+index 3d39238..99e2c0e 100644
+--- a/trove_dashboard/content/databases/templates/databases/logs/_detail_log.html
++++ b/trove_dashboard/content/databases/templates/databases/logs/_detail_log.html
+@@ -1,5 +1,4 @@
+ {% load i18n %}
+-{% load url from future %}
+ 
+ <div class="col-sm-12">
+   <div class="clearfix">
+diff --git a/trove_dashboard/content/databases/templates/databases/logs/_log_contents.html b/trove_dashboard/content/databases/templates/databases/logs/_log_contents.html
+index 9758b53..9083adc 100644
+--- a/trove_dashboard/content/databases/templates/databases/logs/_log_contents.html
++++ b/trove_dashboard/content/databases/templates/databases/logs/_log_contents.html
+@@ -1,6 +1,5 @@
+ {% extends "horizon/common/_modal.html" %}
+ {% load i18n %}
+-{% load url from future %}
+ 
+ {% block modal-header %}{% trans "Log Contents" %}{% endblock %}
+ 
+diff --git a/trove_dashboard/content/databases/urls.py b/trove_dashboard/content/databases/urls.py
+index 1ae2a49..eb08873 100644
+--- a/trove_dashboard/content/databases/urls.py
++++ b/trove_dashboard/content/databases/urls.py
+@@ -13,7 +13,6 @@
+ #    under the License.
+ 
+ from django.conf.urls import include
+-from django.conf.urls import patterns
+ from django.conf.urls import url
+ 
+ from trove_dashboard.content.databases.logs import urls as logs_urls
+@@ -24,8 +23,7 @@ INSTANCES = BASEINSTANCES + '$'
+ USERS = r'^(?P<instance_id>[^/]+)/(?P<user_name>[^/]+)/%s$'
+ 
+ 
+-urlpatterns = patterns(
+-    '',
++urlpatterns = [
+     url(r'^$', views.IndexView.as_view(), name='index'),
+     url(r'^launch$', views.LaunchInstanceView.as_view(), name='launch'),
+     url(INSTANCES % '', views.DetailView.as_view(), name='detail'),
+@@ -49,4 +47,4 @@ urlpatterns = patterns(
+     url(INSTANCES % 'manage_root', views.ManageRootView.as_view(),
+         name='manage_root'),
+     url(BASEINSTANCES % 'logs/', include(logs_urls, namespace='logs')),
+-)
++]
+diff --git a/trove_dashboard/test/urls.py b/trove_dashboard/test/urls.py
+index 9bef20f..cf28475 100644
+--- a/trove_dashboard/test/urls.py
++++ b/trove_dashboard/test/urls.py
+@@ -14,7 +14,6 @@
+ from django.conf import urls
+ import openstack_dashboard.urls
+ 
+-urlpatterns = urls.patterns(
+-    '',
++urlpatterns = [
+     urls.url(r'', urls.include(openstack_dashboard.urls))
+-)
++]

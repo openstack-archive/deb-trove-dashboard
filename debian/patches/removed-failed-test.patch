@@ -4,9 +4,11 @@ Author: Thomas Goirand <zigo@debian.org>
 Forwarded: no
 Last-Update: 2016-03-30
 
---- trove-dashboard-6.0.0~rc2.orig/trove_dashboard/content/databases/tests.py
-+++ trove-dashboard-6.0.0~rc2/trove_dashboard/content/databases/tests.py
-@@ -868,28 +868,6 @@ class DatabaseTests(test.TestCase):
+Index: deb-trove-dashboard/trove_dashboard/content/databases/tests.py
+===================================================================
+--- deb-trove-dashboard.orig/trove_dashboard/content/databases/tests.py
++++ deb-trove-dashboard/trove_dashboard/content/databases/tests.py
+@@ -944,28 +944,6 @@ class DatabaseTests(test.TestCase):
          self.assertNoFormErrors(res)
          self.assertRedirectsNoFollow(res, INDEX_URL)
  
