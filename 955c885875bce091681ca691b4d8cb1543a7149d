@@ -1,0 +1,8 @@
+Code-Review+2: Radomir Dopieralski <openstack@sheep.art.pl>
+Workflow+1: Radomir Dopieralski <openstack@sheep.art.pl>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 13 Jun 2017 18:00:11 +0000
+Reviewed-on: https://review.openstack.org/447465
+Project: openstack/deb-trove-dashboard
+Branch: refs/heads/master
