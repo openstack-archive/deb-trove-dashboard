@@ -1,4 +1,0 @@
-recursive-include trove_dashboard *.html *.scss *.js
-
-include AUTHORS
-include ChangeLog
